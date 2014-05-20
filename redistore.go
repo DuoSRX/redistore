@@ -28,6 +28,7 @@ type RediStore struct {
 	Options       *sessions.Options // default configuration
 	DefaultMaxAge int               // default Redis TTL for a MaxAge == 0 session
 	maxLength     int
+	namespace     string
 }
 
 // SetMaxLength sets RediStore.maxLength if the `l` argument is greater or equal 0
@@ -81,7 +82,7 @@ func dial(network, address, password string) (redis.Conn, error) {
 
 // NewRediStore returns a new RediStore.
 // size: maximum number of idle connections.
-func NewRediStore(size int, network, address, password string, keyPairs ...[]byte) (*RediStore, error) {
+func NewRediStore(size int, network, address, password, namespace string, keyPairs ...[]byte) (*RediStore, error) {
 	return NewRediStoreWithPool(&redis.Pool{
 		MaxIdle:     size,
 		IdleTimeout: 240 * time.Second,
@@ -92,13 +93,13 @@ func NewRediStore(size int, network, address, password string, keyPairs ...[]byt
 		Dial: func() (redis.Conn, error) {
 			return dial(network, address, password)
 		},
-	}, keyPairs...)
+	}, namespace, keyPairs...)
 }
 
 // NewRedisStoreWithDB - like NewRedisStore but accepts `DB` parameter to select
 // redis DB instead of using the default one ("0")
-func NewRediStoreWithDB(size int, network, address, password, DB string, keyPairs ...[]byte) (*RediStore, error) {
-	rs, _ := NewRediStore(size, network, address, password, keyPairs...)
+func NewRediStoreWithDB(size int, network, address, password, DB, namespace string, keyPairs ...[]byte) (*RediStore, error) {
+	rs, _ := NewRediStore(size, network, address, password, namespace, keyPairs...)
 	rs.Pool.Dial = func() (redis.Conn, error) {
 		c, err := dial(network, address, password)
 		if err != nil {
@@ -115,7 +116,7 @@ func NewRediStoreWithDB(size int, network, address, password, DB string, keyPair
 }
 
 // NewRediStoreWithPool instantiates a RediStore with a *redis.Pool passed in.
-func NewRediStoreWithPool(pool *redis.Pool, keyPairs ...[]byte) (*RediStore, error) {
+func NewRediStoreWithPool(pool *redis.Pool, namespace string, keyPairs ...[]byte) (*RediStore, error) {
 	rs := &RediStore{
 		// http://godoc.org/github.com/garyburd/redigo/redis#Pool
 		Pool:   pool,
@@ -126,6 +127,7 @@ func NewRediStoreWithPool(pool *redis.Pool, keyPairs ...[]byte) (*RediStore, err
 		},
 		DefaultMaxAge: 60 * 20, // 20 minutes seems like a reasonable default
 		maxLength:     4096,
+		namespace:     namespace,
 	}
 	_, err := rs.ping()
 	return rs, err
@@ -193,7 +195,7 @@ func (s *RediStore) Save(r *http.Request, w http.ResponseWriter, session *sessio
 func (s *RediStore) Delete(r *http.Request, w http.ResponseWriter, session *sessions.Session) error {
 	conn := s.Pool.Get()
 	defer conn.Close()
-	if _, err := conn.Do("DEL", "session_"+session.ID); err != nil {
+	if _, err := conn.Do("DEL", s.namespace+session.ID); err != nil {
 		return err
 	}
 	// Set cookie to expire.
@@ -239,7 +241,7 @@ func (s *RediStore) save(session *sessions.Session) error {
 	if age == 0 {
 		age = s.DefaultMaxAge
 	}
-	_, err = conn.Do("SETEX", "session_"+session.ID, age, b)
+	_, err = conn.Do("SETEX", s.namespace+session.ID, age, b)
 	return err
 }
 
@@ -251,7 +253,7 @@ func (s *RediStore) load(session *sessions.Session) (bool, error) {
 	if err := conn.Err(); err != nil {
 		return false, err
 	}
-	data, err := conn.Do("GET", "session_"+session.ID)
+	data, err := conn.Do("GET", s.namespace+session.ID)
 	if err != nil {
 		return false, err
 	}
@@ -270,7 +272,7 @@ func (s *RediStore) load(session *sessions.Session) (bool, error) {
 func (s *RediStore) delete(session *sessions.Session) error {
 	conn := s.Pool.Get()
 	defer conn.Close()
-	if _, err := conn.Do("DEL", "session_"+session.ID); err != nil {
+	if _, err := conn.Do("DEL", s.namespace+session.ID); err != nil {
 		return err
 	}
 	return nil

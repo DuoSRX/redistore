@@ -19,7 +19,7 @@ See http://www.gorillatoolkit.org/pkg/sessions for full documentation on underly
 ### Example
 
     // Fetch new store.
-    store, err := NewRediStore(10, "tcp", ":6379", "", []byte("secret-key"))
+    store, err := NewRediStore(10, "tcp", ":6379", "", "session_", []byte("secret-key"))
     if err != nil {
         panic(err)
     }
